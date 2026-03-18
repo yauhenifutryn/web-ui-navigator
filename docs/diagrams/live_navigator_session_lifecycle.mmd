@@ -1,0 +1,25 @@
+flowchart TD
+    start["Start or resume session"] --> mode{"Select mode"}
+
+    mode -->|complex_workspace| complexA["Fingerprint workspace"]
+    mode -->|review_only| reviewA["Inspect page and goal"]
+
+    complexA --> complexB["Build structure checklist"]
+    complexB --> complexC["Track coverage"]
+    complexC --> complexD{"Coverage plausible?"}
+    complexD -->|no| degraded["Fail closed"]
+    complexD -->|yes| complexE["Build review batch"]
+    complexE --> complexF["Review, Live Notes, Map"]
+    complexF --> complexG["Optional safe actions"]
+
+    reviewA --> reviewB["Follow relevant parent links"]
+    reviewB --> reviewC["Extract and normalize"]
+    reviewC --> reviewD["Summary and full review"]
+
+    degraded --> resume["Saved session and resume flow"]
+    complexG --> resume
+    reviewD --> resume
+
+    resume --> reindex{"Need refresh?"}
+    reindex -->|yes| mode
+    reindex -->|no| done["Continue from cached state"]

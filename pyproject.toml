@@ -1,0 +1,30 @@
+[project]
+name = "marketplace-bot"
+version = "0.1.0"
+description = "Universal UI navigator for complex web workspaces"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "playwright>=1.53.0",
+  "fastapi>=0.116.0",
+  "uvicorn>=0.35.0",
+  "beautifulsoup4>=4.13.0",
+  "google-genai>=0.8.0",
+  "google-cloud-firestore>=2.20.0",
+  "google-cloud-storage>=3.1.0",
+  "html2text>=2024.2.26",
+  "httpx>=0.28.0",
+  "pydantic>=2.11.0",
+]
+
+[project.scripts]
+navigator-connect = "marketplace_bot.cli.connect_cloud:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.0",
+  "pytest-asyncio>=0.24.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

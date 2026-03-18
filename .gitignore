@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.DS_Store
+*.egg-info/
+node_modules/
+.env
+
+# Runtime data (browser profiles, session cache, site memory)
+runtime/
+.playwright-cli/
+output/
+
+AGENTS.md
+CONTINUITY.md
+PROJECT_LOG.md
+UI_TRINITY.md
+docs/plans/2026-01-20-project-log-design.md

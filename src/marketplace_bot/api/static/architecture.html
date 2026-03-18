@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live Navigator Architecture</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <style>
+      .arch-grid {
+        display: grid;
+        gap: 20px;
+      }
+      .arch-diagram {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 22px;
+        border: 1px solid rgba(122, 162, 255, 0.18);
+        background: rgba(8, 12, 20, 0.35);
+        padding: 18px;
+      }
+      .arch-columns {
+        display: grid;
+        gap: 18px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .arch-columns ul {
+        margin: 10px 0 0;
+        padding-left: 18px;
+      }
+      .arch-columns li {
+        margin: 0 0 8px;
+      }
+      @media (max-width: 900px) {
+        .arch-columns {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="layout">
+      <header class="card">
+        <div class="section-head">
+          <h1>ARCHITECTURE DIAGRAM</h1>
+          <a class="link-btn" href="/">BACK TO CONTROL</a>
+        </div>
+        <p class="hero-text">
+          Live Navigator Companion is a hybrid UI navigator for dense web workspaces. The browser stays local, the hosted planning path runs on Google Cloud, and the user works directly inside the live site.
+        </p>
+      </header>
+
+      <section class="card arch-grid">
+        <div class="section-head">
+          <h2>System Architecture</h2>
+        </div>
+        <p class="hero-text">
+          This view answers the deployment question: what runs in the browser, what runs on the operator machine, and what runs on Google Cloud.
+        </p>
+        <img
+          src="/static/live_navigator_system_architecture.png"
+          alt="Live Navigator system architecture"
+          class="arch-diagram"
+        />
+      </section>
+
+      <section class="card arch-grid">
+        <div class="section-head">
+          <h2>Session Lifecycle</h2>
+        </div>
+        <p class="hero-text">
+          This view answers the product question: how a session moves from setup to indexing, review, map inspection, live notes, safe actions, and resume.
+        </p>
+        <img
+          src="/static/live_navigator_session_lifecycle.png"
+          alt="Live Navigator session lifecycle"
+          class="arch-diagram"
+        />
+      </section>
+
+      <section class="card arch-columns">
+        <div>
+          <div class="section-head">
+            <h2>Core Features</h2>
+          </div>
+          <ul>
+            <li>Two runtime modes: <code>complex_workspace</code> and <code>review_only</code>.</li>
+            <li>Structure checklist and coverage accounting.</li>
+            <li>Full review tab and map or coverage inspector.</li>
+            <li>Inline Live Notes for complex workspaces.</li>
+            <li>Saved sessions, resume, partial refresh, and full refresh.</li>
+            <li>Review-first behavior with optional safe execution.</li>
+          </ul>
+        </div>
+        <div>
+          <div class="section-head">
+            <h2>Google Stack</h2>
+          </div>
+          <ul>
+            <li>Cloud Run hosts the backend path.</li>
+            <li>Google GenAI SDK drives the planner path.</li>
+            <li>Gemini or Vertex AI provides multimodal reasoning.</li>
+            <li>Firestore stores session memory.</li>
+            <li>Cloud Storage stores artifacts and evidence.</li>
+          </ul>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

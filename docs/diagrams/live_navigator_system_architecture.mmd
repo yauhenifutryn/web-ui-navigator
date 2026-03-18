@@ -1,0 +1,48 @@
+flowchart TB
+    operator["Operator"]
+
+    subgraph surface["User-facing browser surface"]
+        site["Live site"]
+        overlay["Overlay"]
+        review["Review tab"]
+        map["Map tab"]
+    end
+
+    subgraph local["Local runtime on operator machine"]
+        api["Local API"]
+        companion["Session companion"]
+        bridge["Browser bridge"]
+        grounding["Grounding"]
+        executor["Safe executor"]
+    end
+
+    subgraph cloud["Google Cloud backend"]
+        cloudrun["Cloud Run"]
+        planner["Planner"]
+        gemini["Gemini / Vertex"]
+        firestore["Firestore"]
+        storage["Cloud Storage"]
+    end
+
+    operator --> overlay
+    operator --> review
+    operator --> map
+    site --> overlay
+
+    overlay <--> api
+    review <--> api
+    map <--> api
+
+    api --> companion
+    companion --> bridge
+    bridge <--> site
+    bridge --> grounding
+    companion --> executor
+    executor --> site
+
+    grounding --> planner
+    companion <--> cloudrun
+    cloudrun --> planner
+    planner <--> gemini
+    cloudrun <--> firestore
+    cloudrun <--> storage
