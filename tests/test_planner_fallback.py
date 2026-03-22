@@ -983,3 +983,63 @@ def test_editable_table_review_suppresses_generic_cross_page_items():
     assert all("Review the editable row" not in item.recommendation for item in batch.items)
     assert all(item.page_hint in {"Pricing", "Pro Forma Accounting"} for item in batch.items)
     assert all(item.field_label != "Advertising plan" for item in batch.items)
+
+
+def test_non_editable_marketplace_page_avoids_generic_cross_page_review_filler():
+    planner = PlannerService(EmptyLLM())
+    session = SessionMemory(
+        session_id="sess_non_editable_page",
+        project_name="Demo",
+        goal=GoalSpec(
+            raw_goal="Win the Marketplace simulation and optimize the current quarter.",
+            objective="Act as a quarter-aware business simulation companion.",
+            constraints=[],
+            success_criteria=[],
+            domain_pack="marketplace_simulation",
+            safety_mode="confirm_before_act",
+            created_at="2026-03-09T00:00:00Z",
+        ),
+        domain_pack="marketplace_simulation",
+        strategic_summary="Indexed simulation workflow.",
+        indexed_context={
+            "site_index": {
+                "editable_quarter": 5,
+                "navigation_items": [
+                    "Price and Priority",
+                    "Advertising",
+                    "Brand Management",
+                    "Buy Market Research",
+                ],
+            }
+        },
+        last_indexed_at="2026-03-09T00:00:00Z",
+        created_at="2026-03-09T00:00:00Z",
+        updated_at="2026-03-09T00:00:00Z",
+    )
+    observation = ObservationPacket(
+        session_id="sess_non_editable_page",
+        page_url="https://play.marketplace-simulation.com/mpl/web7/engine.php?resource=welcome-to-marketplace",
+        page_title="Invest in the Future",
+        visible_text_summary=(
+            "Invest in the Future. Venture capitalists are ready to invest up to 3 million in the company. "
+            "Use the money to grow the business."
+        ),
+        dom_summary="Lecture page",
+        active_goal=session.goal.raw_goal,
+        domain_pack="marketplace_simulation",
+        safety_mode="confirm_before_act",
+        browser_metadata={},
+        captured_at="2026-03-09T00:00:01Z",
+    )
+
+    import asyncio
+
+    batch = asyncio.run(planner.review(session, observation))
+
+    assert batch.items
+    assert batch.items[0].title == "Open an editable decision page"
+    assert "Price and Priority" in batch.items[0].recommendation
+    assert all(
+        item.field_label not in {"Research coverage", "Pricing table", "Advertising plan", "Brand line-up"}
+        for item in batch.items
+    )

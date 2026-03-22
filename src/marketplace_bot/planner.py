@@ -448,6 +448,50 @@ class PlannerService:
         return items[:4]
 
     @staticmethod
+    def _marketplace_item_is_measurable(item: ReviewItem) -> bool:
+        measurable_text = " ".join(
+            [
+                item.current_value,
+                item.recommended_value,
+                item.recommended_range,
+                item.evidence,
+            ]
+        )
+        return bool(re.search(r"\d", measurable_text))
+
+    def _marketplace_open_editable_page_item(self, site_index: dict[str, Any], observation: ObservationPacket) -> ReviewItem:
+        suggested_pages: list[str] = []
+        decision_pages = [
+            "Price and Priority",
+            "Advertising",
+            "Sales Channel",
+            "Open Stores",
+            "Buy Market Research",
+        ]
+        haystack = " ".join(str(item) for item in site_index.get("navigation_items", []) or []).lower()
+        for page in decision_pages:
+            if page.lower() in haystack:
+                suggested_pages.append(page)
+        if not suggested_pages:
+            suggested_pages = decision_pages[:3]
+        suggested_text = ", ".join(suggested_pages[:4])
+        return ReviewItem(
+            item_id=f"item_{uuid.uuid4().hex[:10]}",
+            title="Open an editable decision page",
+            page_hint=suggested_pages[0],
+            anchor_text=suggested_pages[0],
+            field_type="summary",
+            current_value=observation.page_title or observation.page_url,
+            recommended_value=f"Open {suggested_text}, then refresh review to get numeric and page-specific recommendations.",
+            why_it_matters="The current page does not expose measurable editable rows, so a precise quarter recommendation would be guesswork.",
+            evidence="Indexed navigation confirms editable decision pages exist, but the current page is informational rather than directly editable.",
+            priority="high",
+            confidence=0.92,
+            actionability="manual_only",
+            requires_followup_check=False,
+        )
+
+    @staticmethod
     def _extract_amount(text: str, label: str) -> str:
         pattern = re.compile(rf"{re.escape(label)}\s*[:\t ]+\$?(?P<amount>[\d,]+)", re.IGNORECASE)
         match = pattern.search(text)
@@ -787,8 +831,18 @@ class PlannerService:
                         ):
                             items.append(suggestion)
             else:
-                items.extend(self._marketplace_navigation_review_items(site_index, observation))
+                navigation_items = [
+                    item
+                    for item in self._marketplace_navigation_review_items(site_index, observation)
+                    if self._marketplace_item_is_measurable(item)
+                ]
+                if navigation_items:
+                    items.extend(navigation_items)
+                else:
+                    items.append(self._marketplace_open_editable_page_item(site_index, observation))
             summary = f"Prepared a review for the current editable quarter{f' {editable_quarter}' if editable_quarter else ''} using indexed simulation context."
+            if items and items[0].title == "Open an editable decision page":
+                summary = "Current page is informational. Open an editable decision page, then refresh review for measurable guidance."
         else:
             return self._generic_comparison_review(session, observation)
 
@@ -801,7 +855,7 @@ class PlannerService:
             items=items[:12],
             actions=actions,
             apply_ready=bool([action for action in actions if not action.requires_confirmation]),
-            insufficiently_grounded=not bool(items),
+            insufficiently_grounded=not any(self._marketplace_item_is_measurable(item) for item in items),
             beta_warning="Apply is beta. Manual application is safer.",
         )
 

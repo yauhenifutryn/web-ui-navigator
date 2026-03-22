@@ -2,6 +2,10 @@
 
 Live Navigator Companion is a research project in **deep indexing and stateful browser interaction**. Instead of treating each page as a fresh observation, it builds a persistent structural index of a complex web workspace, reuses that memory across sessions, and grounds live guidance against the current page plus the known workspace graph.
 
+## Project Status
+
+This is a very early experimental project. Expect rough edges, incomplete heuristics, and review quality that is still inconsistent on complex workflows. The current goal is to explore whether deep indexing plus stateful browser interaction can outperform page-by-page browser agents on dense workspaces. Reliability, quantitative recommendations, and broader domain support still need substantial work.
+
 ## What Makes This Different
 
 Most browser agents work page-by-page. This project explores a structure-first path:
@@ -75,6 +79,12 @@ This creates `.venv` if needed, installs the project in editable mode, launches 
 Then move to the real website tab — the overlay and runtime controls live there.
 
 Deep indexing artifacts and reusable structure memory are stored under `runtime/site_memory`.
+
+## Local Security Model
+
+This is a single-user local development tool. Chrome debug mode on port `9222` and the local API on `127.0.0.1:8002` intentionally have no authentication.
+
+Keep Chrome debug mode and the API bound to localhost. Do not expose them to a shared machine, container network, or remote interface unless you add your own access controls first.
 
 Other make targets:
 - `make relaunch` — clean restart that replaces a stale local server.

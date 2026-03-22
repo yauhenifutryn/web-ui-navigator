@@ -162,6 +162,15 @@ Chrome debug mode is required and is now expected on:
 Local bootstrap / recovery page:
   ${UI_URL}
 
+Server PID:
+  $(cat "${PID_FILE}")
+
 Server log:
   ${RUNTIME_DIR}/launch.log
+
+Status:
+  make status
+
+Stop:
+  make stop
 EOF

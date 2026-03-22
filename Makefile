@@ -1,4 +1,4 @@
-.PHONY: setup launch test reset-cache relaunch
+.PHONY: setup launch test reset-cache relaunch stop status
 
 setup:
 	python3 -m venv .venv
@@ -15,3 +15,9 @@ reset-cache:
 
 relaunch:
 	bash scripts/launch_local.sh
+
+stop:
+	bash scripts/stop_local.sh
+
+status:
+	bash scripts/status_local.sh

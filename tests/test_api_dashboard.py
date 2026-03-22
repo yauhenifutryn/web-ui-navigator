@@ -751,6 +751,10 @@ def test_readme_documents_debug_chrome_and_one_command_launch() -> None:
     assert "Deep Scan" in readme
     assert "runtime/site_memory" in readme
     assert "structure fingerprint" in readme
+    assert "127.0.0.1:8002" in readme
+    assert "single-user local development tool" in readme
+    assert "no authentication" in readme
+    assert "Chrome debug mode and the API bound to localhost" in readme
 
 
 def test_makefile_exposes_setup_launch_and_test_targets() -> None:

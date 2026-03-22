@@ -325,3 +325,22 @@ def test_launch_script_detaches_ui_server_from_the_parent_terminal() -> None:
     assert "start_new_session=True" in launch
     assert "stdin=subprocess.DEVNULL" in launch
     assert 'Path(sys.argv[1]).write_text(str(process.pid), encoding="utf-8")' in launch
+
+
+def test_makefile_exposes_explicit_local_status_and_stop_commands() -> None:
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+
+    assert ".PHONY: setup launch test reset-cache relaunch stop status" in makefile
+    assert "status:\n\tbash scripts/status_local.sh" in makefile
+    assert "stop:\n\tbash scripts/stop_local.sh" in makefile
+
+
+def test_stop_and_status_scripts_use_the_pid_file_contract() -> None:
+    stop_script = Path("scripts/stop_local.sh").read_text(encoding="utf-8")
+    status_script = Path("scripts/status_local.sh").read_text(encoding="utf-8")
+
+    assert 'PID_FILE="${RUNTIME_DIR}/ui_server.pid"' in stop_script
+    assert 'PID_FILE="${RUNTIME_DIR}/ui_server.pid"' in status_script
+    assert 'curl -fsS -X POST "${UI_URL}/api/stop"' in stop_script
+    assert 'kill "${PID}"' in stop_script
+    assert 'curl -fsS "${UI_URL}/api/health"' in status_script

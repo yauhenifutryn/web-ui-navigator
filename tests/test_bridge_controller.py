@@ -117,6 +117,16 @@ class _RuntimePage(_Page):
         self.events.append((event_name, handler))
 
 
+class _EvaluatingPage(_RuntimePage):
+    def __init__(self, url: str = "", title: str = "Page") -> None:
+        super().__init__(url=url, title=title)
+        self.evaluate_calls = []
+
+    async def evaluate(self, script, payload=None):
+        self.evaluate_calls.append((script, payload))
+        return None
+
+
 def test_bridge_reconnects_when_cached_controller_has_no_pages(monkeypatch, tmp_path: Path) -> None:
     state_store = StateStore(tmp_path / 'runtime')
     state_store.bootstrap()
@@ -180,6 +190,75 @@ def test_bridge_assigns_stable_uuid_runtime_tokens_per_page(tmp_path: Path) -> N
     assert len(page_a.init_scripts) == 1
     assert len(page_b.init_scripts) == 1
     assert bridge._page_runtime_tokens[page_a] != bridge._page_runtime_tokens[page_b]
+
+
+def test_sync_agent_overlay_interpolates_inline_note_width_constant(monkeypatch, tmp_path: Path) -> None:
+    state_store = StateStore(tmp_path / "runtime")
+    state_store.bootstrap()
+    bridge = LocalBrowserBridge(
+        state_store=state_store,
+        cdp_url="http://127.0.0.1:9222",
+        target_domain="play.marketplace-simulation.com",
+    )
+    page = _EvaluatingPage("https://example.com/a")
+
+    async def _get_target_page(prefer_url=None):
+        return page
+
+    async def _ensure_page_runtime(_page):
+        return None
+
+    monkeypatch.setattr(bridge, "_get_target_page", _get_target_page)
+    monkeypatch.setattr(bridge, "_ensure_page_runtime", _ensure_page_runtime)
+
+    asyncio.run(bridge.sync_agent_overlay({"stage": "idle", "title": "Live Navigator"}))
+
+    script, payload = page.evaluate_calls[-1]
+    assert "${OVERLAY_INLINE_NOTE_WIDTH_PX}" not in script
+    assert "const noteWidth = 260;" in script
+    assert payload["stage"] == "idle"
+
+
+def test_sync_agent_overlay_escapes_inline_note_html(monkeypatch, tmp_path: Path) -> None:
+    state_store = StateStore(tmp_path / "runtime")
+    state_store.bootstrap()
+    bridge = LocalBrowserBridge(
+        state_store=state_store,
+        cdp_url="http://127.0.0.1:9222",
+        target_domain="play.marketplace-simulation.com",
+    )
+    page = _EvaluatingPage("https://example.com/a")
+
+    async def _get_target_page(prefer_url=None):
+        return page
+
+    async def _ensure_page_runtime(_page):
+        return None
+
+    monkeypatch.setattr(bridge, "_get_target_page", _get_target_page)
+    monkeypatch.setattr(bridge, "_ensure_page_runtime", _ensure_page_runtime)
+
+    asyncio.run(
+        bridge.sync_agent_overlay(
+            {
+                "stage": "live_advice",
+                "title": "Live Navigator",
+                "inline_notes": [
+                    {
+                        "title": '</div><script>alert("pwned")</script>',
+                        "body": "<img src=x onerror=alert(1)>",
+                    }
+                ],
+            }
+        )
+    )
+
+    script, _payload = page.evaluate_calls[-1]
+    assert "const escapeHtml = (value) => {" in script
+    assert '${escapeHtml(note.title || "Suggested change")}' in script
+    assert '${escapeHtml(note.body || "")}' in script
+    assert '${note.title || "Suggested change"}' not in script
+    assert '${note.body || ""}' not in script
 
 
 def test_bridge_logs_warning_when_navigation_resync_fails(monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -863,6 +942,156 @@ def test_build_observation_captures_supplementary_table_slices(monkeypatch, tmp_
     assert len(page.screenshot_args) == 3
     assert page.screenshot_args[0]["clip"] is None
     assert page.screenshot_args[1]["clip"]["y"] == 120
+
+
+def test_build_observation_captures_long_page_slices_below_the_fold(monkeypatch, tmp_path: Path) -> None:
+    state_store = StateStore(tmp_path / "runtime")
+    state_store.bootstrap()
+
+    class _LongPage(_Page):
+        def __init__(self) -> None:
+            super().__init__("https://example.com/long", title="Long Page")
+            self.screenshot_args = []
+            self.scroll_updates = []
+
+        async def screenshot(self, type: str = "png", full_page: bool = False, clip=None) -> bytes:
+            self.screenshot_args.append({"type": type, "full_page": full_page, "clip": clip})
+            if clip is None:
+                return b"page-png"
+            return f"slice-{len(self.screenshot_args)}".encode("utf-8")
+
+        async def evaluate(self, script, payload=None):
+            if payload and "scrollTop" in payload:
+                self.scroll_updates.append(int(payload["scrollTop"]))
+                return None
+            if "data-live-nav-capture-target" in str(script):
+                return None
+            if "document.scrollingElement" in str(script):
+                return {
+                    "label": "Page depth capture",
+                    "scroll_height": 2400,
+                    "viewport_height": 820,
+                    "original_scroll_y": 0,
+                    "captures": [
+                        {"label": "page_slice_2", "scroll_top": 620},
+                        {"label": "page_slice_3", "scroll_top": 1460},
+                    ],
+                }
+            return None
+
+    page = _LongPage()
+    bridge = LocalBrowserBridge(
+        state_store=state_store,
+        cdp_url="http://127.0.0.1:9222",
+        target_domain="example.com",
+    )
+
+    class _Crawler:
+        async def extract_semantic_text(self, active_page):
+            assert active_page is page
+            return "Long page summary"
+
+    async def _extract_browser_metadata(active_page):
+        assert active_page is page
+        return {"page_signature": "sig-long"}
+
+    async def _capture_ax_metadata(active_page, *, session_id: str, mode: str, target_scope=None):
+        assert active_page is page
+        return {}
+
+    monkeypatch.setattr(bridge, "_extract_browser_metadata", _extract_browser_metadata)
+    monkeypatch.setattr(bridge, "_capture_ax_metadata", _capture_ax_metadata)
+
+    observation = asyncio.run(
+        bridge._build_observation(
+            page=page,
+            crawler=_Crawler(),
+            session_id="sess_long",
+            active_goal="Review the full page.",
+            domain_pack="generic_web",
+            safety_mode="confirm_before_act",
+        )
+    )
+
+    labels = [item.label for item in observation.supplementary_screenshots]
+    assert "page_slice_2" in labels
+    assert "page_slice_3" in labels
+    assert observation.browser_metadata["page_region"]["scroll_height"] == 2400
+    assert page.scroll_updates[:2] == [620, 1460]
+
+
+def test_build_observation_keeps_running_when_a_supplementary_capture_fails(monkeypatch, tmp_path: Path) -> None:
+    state_store = StateStore(tmp_path / "runtime")
+    state_store.bootstrap()
+
+    class _FlakyLongPage(_Page):
+        def __init__(self) -> None:
+            super().__init__("https://example.com/flaky", title="Flaky Long Page")
+            self.screenshot_args = []
+
+        async def screenshot(self, type: str = "png", full_page: bool = False, clip=None) -> bytes:
+            self.screenshot_args.append({"type": type, "full_page": full_page, "clip": clip})
+            if clip is None:
+                if len(self.screenshot_args) == 2:
+                    raise RuntimeError("slice capture failed")
+                return b"page-png"
+            return b"later-slice"
+
+        async def evaluate(self, script, payload=None):
+            if payload and "scrollTop" in payload:
+                return None
+            if "data-live-nav-capture-target" in str(script):
+                return None
+            if "document.scrollingElement" in str(script):
+                return {
+                    "label": "Page depth capture",
+                    "scroll_height": 1800,
+                    "viewport_height": 820,
+                    "original_scroll_y": 0,
+                    "captures": [
+                        {"label": "page_slice_2", "scroll_top": 420},
+                        {"label": "page_slice_3", "scroll_top": 980},
+                    ],
+                }
+            return None
+
+    page = _FlakyLongPage()
+    bridge = LocalBrowserBridge(
+        state_store=state_store,
+        cdp_url="http://127.0.0.1:9222",
+        target_domain="example.com",
+    )
+
+    class _Crawler:
+        async def extract_semantic_text(self, active_page):
+            assert active_page is page
+            return "Flaky long page summary"
+
+    async def _extract_browser_metadata(active_page):
+        assert active_page is page
+        return {"page_signature": "sig-flaky"}
+
+    async def _capture_ax_metadata(active_page, *, session_id: str, mode: str, target_scope=None):
+        assert active_page is page
+        return {}
+
+    monkeypatch.setattr(bridge, "_extract_browser_metadata", _extract_browser_metadata)
+    monkeypatch.setattr(bridge, "_capture_ax_metadata", _capture_ax_metadata)
+
+    observation = asyncio.run(
+        bridge._build_observation(
+            page=page,
+            crawler=_Crawler(),
+            session_id="sess_flaky",
+            active_goal="Review the full page.",
+            domain_pack="generic_web",
+            safety_mode="confirm_before_act",
+        )
+    )
+
+    labels = [item.label for item in observation.supplementary_screenshots]
+    assert labels == ["page_slice_3"]
+    assert observation.screenshot_b64
 
 
 def test_execute_single_blocks_click_when_ax_target_is_not_actionable(tmp_path: Path) -> None:

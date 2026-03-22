@@ -74,7 +74,11 @@ def test_overlay_html_uses_clearer_preset_and_scan_labels():
     assert "Complex Workspace is for nested, recurring, data-heavy systems such as legacy business apps, internal tools, and Marketplace." in html
     assert "Deep Scan is recommended for complex workspaces because it builds reusable structure memory." in html
     assert 'class="ln-rail ln-rail-setup"' in html
+    assert 'class="ln-setup-shell"' in html
+    assert 'class="ln-setup-scroll"' in html
+    assert 'class="ln-setup-footer"' in html
     assert 'class="ln-command-row ln-setup-actions"' in html
+    assert 'form="ln-setup-form"' in html
 
 
 def test_overlay_html_disables_smart_scan_when_no_prior_memory_exists():
@@ -239,6 +243,30 @@ def test_overlay_html_surfaces_last_capture_metadata():
     assert "Strategic Graphs" in html
 
 
+def test_overlay_html_surfaces_long_page_capture_details_when_available():
+    html = LocalBrowserBridge._overlay_html(
+        {
+            "view": "session",
+            "title": "Live Navigator",
+            "stage": "indexing",
+            "status": "Indexing visible workflow areas.",
+            "goal": "Review the site.",
+            "last_capture_at": "2026-03-22T14:00:00Z",
+            "last_capture_page": "Invest in the Future",
+            "last_capture_region": {
+                "slice_count": 3,
+                "scroll_height": 2460,
+                "viewport_height": 820,
+            },
+        }
+    )
+
+    assert "Viewport slices" in html
+    assert "3 total" in html
+    assert "2 below the fold" in html
+    assert "2460px page" in html
+
+
 def test_overlay_html_shows_return_to_active_session_in_setup():
     html = LocalBrowserBridge._overlay_html(
         {
@@ -262,7 +290,11 @@ def test_overlay_css_adds_click_feedback_for_buttons():
     assert ".ln-clicked" in css
     assert "scale(.985)" in css
     assert ".ln-setup-actions" in css
-    assert "position: sticky" in css
+    assert ".ln-setup-footer" in css
+    assert ".ln-setup-scroll" in css
+    assert ".ln-rail-setup" in css
+    assert "overflow: hidden;" in css
+    assert "overflow: auto;" in css
     assert ".ln-rail-toggle" in css
     assert '[data-rail-collapsed="true"] .ln-rail' in css
 
@@ -273,6 +305,7 @@ def test_overlay_css_offsets_the_bottom_dock_and_attaches_the_handle_to_the_rail
     assert "--ln-rail-width" in css
     assert "--ln-dock-clearance" in css
     assert "box-sizing: border-box;" in css
+    assert "min(360px, calc(100vw - 34px))" in css
     assert "right: calc(20px + var(--ln-rail-width) - 4px);" in css
     assert "border-right: none;" in css
     assert "[data-rail-collapsed=\"false\"]" in css
@@ -511,7 +544,7 @@ def test_overlay_css_keeps_more_vertical_room_for_the_desktop_rail():
 def test_overlay_css_offsets_active_dock_from_the_rail_and_wraps_long_status_text():
     css = LocalBrowserBridge._overlay_css()
 
-    assert "left: 24px;" in css
-    assert "transform: none;" in css
+    assert "left: calc((100vw - var(--ln-dock-clearance)) / 2);" in css
+    assert "transform: translateX(-50%);" in css
     assert "width: min(520px, calc(100vw - 48px - var(--ln-dock-clearance)));" in css
     assert "overflow-wrap: anywhere;" in css

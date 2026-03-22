@@ -202,10 +202,12 @@ def create_app(
         last_capture_at = ""
         last_capture_path = ""
         last_capture_page = ""
+        last_capture_region: dict[str, Any] = {}
         if session.last_observation is not None:
             last_capture_at = str(session.last_observation.captured_at or "")
             last_capture_path = str(session.last_observation.screenshot_path or "")
             last_capture_page = str(session.last_observation.page_title or session.last_observation.page_url or "")
+            last_capture_region = dict(session.last_observation.browser_metadata.get("page_region", {}) or {})
         return {
             "view": "session",
             "session_id": session.session_id,
@@ -255,6 +257,7 @@ def create_app(
             "last_capture_at": last_capture_at,
             "last_capture_path": last_capture_path,
             "last_capture_page": last_capture_page,
+            "last_capture_region": last_capture_region,
         }
 
     def _map_page_html(session: SessionMemory) -> str:

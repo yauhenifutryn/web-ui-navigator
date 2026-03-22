@@ -35,7 +35,7 @@ from marketplace_bot.state_store import StateStore, utc_now_iso
 logger = logging.getLogger(__name__)
 
 OVERLAY_INLINE_NOTE_WIDTH_PX = 260
-OVERLAY_RAIL_WIDTH_PX = 320
+OVERLAY_RAIL_WIDTH_PX = 360
 OVERLAY_DOCK_WIDTH_PX = 520
 OVERLAY_AGENT_CURSOR_RIGHT_PX = 435
 
@@ -306,7 +306,7 @@ class LocalBrowserBridge:
         page_url = str(getattr(page, "url", "") or "")
         if page_url.startswith("http") and not self._is_local_url(page_url):
             self._last_target_hint = page_url
-        await page.evaluate(
+        overlay_script = (
             r"""
             ({ html, css, stage, panel }) => {
               const rootId = "__live_navigator_overlay_root__";
@@ -325,6 +325,18 @@ class LocalBrowserBridge:
                 document.querySelectorAll(".__live_navigator_inline_note__").forEach((node) => node.remove());
               };
 
+              const escapeHtml = (value) => {
+                return String(value ?? "").replace(/[&<>"']/g, (char) => (
+                  {
+                    "&": "&amp;",
+                    "<": "&lt;",
+                    ">": "&gt;",
+                    '"': "&quot;",
+                    "'": "&#39;",
+                  }[char] || char
+                ));
+              };
+
               const findAnchor = (note) => {
                 const target = String(note.anchor_text || note.field_label || note.page_hint || "").trim().toLowerCase();
                 if (!target) return null;
@@ -337,7 +349,7 @@ class LocalBrowserBridge:
 
               const renderInlineNotes = (notes = []) => {
                 clearInlineNotes();
-                const noteWidth = ${OVERLAY_INLINE_NOTE_WIDTH_PX};
+                const noteWidth = __INLINE_NOTE_WIDTH__;
                 const noteHeight = 120;
                 const placedNotes = [];
                 for (const note of notes.slice(0, 3)) {
@@ -385,7 +397,7 @@ class LocalBrowserBridge:
                     "font:500 12px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
                     "backdrop-filter:blur(24px)",
                   ].join(';');
-                  host.innerHTML = `<div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#7dd3fc;margin-bottom:4px;">Live Note</div><div style="font-weight:700;color:#f8fafc;margin-bottom:3px;font-size:12px;">${note.title || "Suggested change"}</div><div style="color:#cbd5e1;margin-bottom:4px;font-size:11px;">${note.body || ""}</div>`;
+                  host.innerHTML = `<div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#7dd3fc;margin-bottom:4px;">Live Note</div><div style="font-weight:700;color:#f8fafc;margin-bottom:3px;font-size:12px;">${escapeHtml(note.title || "Suggested change")}</div><div style="color:#cbd5e1;margin-bottom:4px;font-size:11px;">${escapeHtml(note.body || "")}</div>`;
                   document.documentElement.appendChild(host);
                 }
               };
@@ -539,7 +551,10 @@ class LocalBrowserBridge:
                 notifyPageChange();
               }
             }
-            """,
+            """
+        ).replace("__INLINE_NOTE_WIDTH__", str(OVERLAY_INLINE_NOTE_WIDTH_PX))
+        await page.evaluate(
+            overlay_script,
             {
                 "html": self._overlay_html(panel),
                 "css": self._overlay_css(),
@@ -1001,15 +1016,23 @@ class LocalBrowserBridge:
             session_id=session_id,
             captured_at=captured_at,
         )
+        long_page_capture = await self._capture_long_page_region_data(
+            page,
+            session_id=session_id,
+            captured_at=captured_at,
+        )
         metadata = dict(browser_metadata or {})
         metadata.update(await self._extract_browser_metadata(page))
         metadata.update(supplementary_capture.get("browser_metadata", {}))
+        metadata.update(long_page_capture.get("browser_metadata", {}))
         metadata.update(await self._capture_ax_metadata(page, session_id=session_id, mode=ax_capture_mode))
+        supplementary_screenshots = list(supplementary_capture.get("supplementary_screenshots", []))
+        supplementary_screenshots.extend(long_page_capture.get("supplementary_screenshots", []))
         return ObservationPacket(
             session_id=session_id,
             screenshot_b64=screenshot_b64,
             screenshot_path=screenshot_path,
-            supplementary_screenshots=supplementary_capture.get("supplementary_screenshots", []),
+            supplementary_screenshots=supplementary_screenshots,
             page_url=url,
             page_title=title,
             dom_summary=dom_summary[:12000],
@@ -1136,20 +1159,23 @@ class LocalBrowserBridge:
                         )
                     except Exception:
                         pass
-                screenshot_bytes = await page.screenshot(type="png", full_page=False, clip=clip)
-                screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
-                screenshot_path = self._save_screenshot(
-                    session_id,
-                    screenshot_b64,
-                    f"{captured_at.replace(':', '-')}-{str(item.get('label', 'capture'))}.png",
-                )
-                supplementary.append(
-                    {
-                        "label": str(item.get("label", "table_slice")),
-                        "screenshot_b64": screenshot_b64,
-                        "screenshot_path": screenshot_path,
-                    }
-                )
+                try:
+                    screenshot_bytes = await page.screenshot(type="png", full_page=False, clip=clip)
+                    screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+                    screenshot_path = self._save_screenshot(
+                        session_id,
+                        screenshot_b64,
+                        f"{captured_at.replace(':', '-')}-{str(item.get('label', 'capture'))}.png",
+                    )
+                    supplementary.append(
+                        {
+                            "label": str(item.get("label", "table_slice")),
+                            "screenshot_b64": screenshot_b64,
+                            "screenshot_path": screenshot_path,
+                        }
+                    )
+                except Exception:
+                    logger.warning("Failed to capture a supplementary table slice.", exc_info=True)
         finally:
             if selector and original_scroll_top is not None:
                 try:
@@ -1175,6 +1201,137 @@ class LocalBrowserBridge:
                     "row_count": int(descriptor.get("row_count", 0) or 0),
                     "headers": list(descriptor.get("headers", []) or []),
                     "sample_rows": list(descriptor.get("sample_rows", []) or []),
+                }
+            },
+        }
+
+    async def _capture_long_page_region_data(
+        self,
+        page: Any,
+        *,
+        session_id: str,
+        captured_at: str,
+    ) -> dict[str, Any]:
+        try:
+            descriptor = await page.evaluate(
+                r"""
+                () => {
+                  const root = document.scrollingElement || document.documentElement || document.body;
+                  if (!root) return null;
+                  const viewportHeight = window.innerHeight || 0;
+                  const scrollHeight = Math.max(
+                    root.scrollHeight || 0,
+                    document.documentElement?.scrollHeight || 0,
+                    document.body?.scrollHeight || 0,
+                  );
+                  if (!viewportHeight || scrollHeight <= viewportHeight + 220) return null;
+
+                  const maxScrollTop = Math.max(0, scrollHeight - viewportHeight);
+                  const candidateTargets = [
+                    Math.min(maxScrollTop, Math.round(viewportHeight * 0.8)),
+                    Math.min(maxScrollTop, Math.round(maxScrollTop * 0.55)),
+                    maxScrollTop,
+                  ];
+                  const uniqueTargets = [];
+                  for (const target of candidateTargets) {
+                    if (target <= 120) continue;
+                    if (uniqueTargets.some((item) => Math.abs(item - target) < 120)) continue;
+                    uniqueTargets.push(target);
+                  }
+                  if (!uniqueTargets.length) return null;
+
+                  return {
+                    label: document.title || "Page depth capture",
+                    scroll_height: scrollHeight,
+                    viewport_height: viewportHeight,
+                    original_scroll_y: window.scrollY || root.scrollTop || 0,
+                    captures: uniqueTargets.slice(0, 2).map((scrollTop, index) => ({
+                      label: `page_slice_${index + 2}`,
+                      scroll_top: scrollTop,
+                    })),
+                  };
+                }
+                """
+            )
+        except Exception:
+            return {}
+
+        if not isinstance(descriptor, dict):
+            return {}
+        scroll_height = int(descriptor.get("scroll_height", 0) or 0)
+        viewport_height = int(descriptor.get("viewport_height", 0) or 0)
+        captures = [item for item in descriptor.get("captures", []) if isinstance(item, dict)]
+        if scroll_height <= viewport_height or not captures:
+            return {}
+
+        supplementary: list[dict[str, Any]] = []
+        original_scroll_y = int(descriptor.get("original_scroll_y", 0) or 0)
+        try:
+            for item in captures:
+                scroll_top = int(item.get("scroll_top", 0) or 0)
+                try:
+                    await page.evaluate(
+                        """
+                        ({ scrollTop }) => {
+                          const root = document.scrollingElement || document.documentElement || document.body;
+                          if (!root) return;
+                          root.scrollTop = scrollTop;
+                          window.scrollTo(0, scrollTop);
+                        }
+                        """,
+                        {"scrollTop": scroll_top},
+                    )
+                    await page.evaluate(
+                        """
+                        () => new Promise((resolve) => {
+                          requestAnimationFrame(() => requestAnimationFrame(resolve));
+                        })
+                        """
+                    )
+                    screenshot_bytes = await page.screenshot(type="png", full_page=False)
+                except Exception:
+                    logger.warning("Failed to capture a long-page supplementary screenshot.", exc_info=True)
+                    continue
+
+                screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+                screenshot_path = self._save_screenshot(
+                    session_id,
+                    screenshot_b64,
+                    f"{captured_at.replace(':', '-')}-{str(item.get('label', 'page-slice'))}.png",
+                )
+                supplementary.append(
+                    {
+                        "label": str(item.get("label", "page_slice")),
+                        "screenshot_b64": screenshot_b64,
+                        "screenshot_path": screenshot_path,
+                    }
+                )
+        finally:
+            try:
+                await page.evaluate(
+                    """
+                    ({ scrollTop }) => {
+                      const root = document.scrollingElement || document.documentElement || document.body;
+                      if (!root) return;
+                      root.scrollTop = scrollTop;
+                      window.scrollTo(0, scrollTop);
+                    }
+                    """,
+                    {"scrollTop": original_scroll_y},
+                )
+            except Exception:
+                logger.warning("Failed to restore the original page scroll position after long-page capture.", exc_info=True)
+
+        if not supplementary:
+            return {}
+        return {
+            "supplementary_screenshots": supplementary,
+            "browser_metadata": {
+                "page_region": {
+                    "label": str(descriptor.get("label", "") or ""),
+                    "scroll_height": scroll_height,
+                    "viewport_height": viewport_height,
+                    "slice_count": len(supplementary),
                 }
             },
         }
@@ -1671,6 +1828,7 @@ class LocalBrowserBridge:
         last_capture_path_raw = str(panel.get("last_capture_path", "") or "")
         last_capture_file = html.escape(last_capture_path_raw.rsplit("/", 1)[-1]) if last_capture_path_raw else ""
         last_capture_page = html.escape(str(panel.get("last_capture_page", "") or ""))
+        last_capture_region = dict(panel.get("last_capture_region", {}) or {})
         mode = str(panel.get("mode") or ("complex_workspace" if view == "session" or str(panel.get("domain_pack", "")) == "marketplace_simulation" else "review_only"))
         review_ready = bool(panel.get("review_ready"))
         insufficiently_grounded = bool(panel.get("insufficiently_grounded"))
@@ -1734,44 +1892,50 @@ class LocalBrowserBridge:
             )
 
         setup_markup = f"""
-          <section class="ln-card">
-            <p class="ln-label">Start or Resume</p>
-            <form class="ln-setup-form" data-setup-form>
-              <label class="ln-field">
-                <span>Project</span>
-                <input data-field="project_name" type="text" value="{html.escape(str(panel.get('project_name', 'Navigator Session')))}" />
-              </label>
-              <label class="ln-field">
-                <span>Goal</span>
-                <textarea data-field="goal" rows="3">{html.escape(str(panel.get('goal', 'Help me navigate this website.')))}</textarea>
-              </label>
-              <label class="ln-field">
-                <span>Workspace Type</span>
-                <select data-field="domain_hint">
-                  <option value="generic_web"{' selected' if selected_domain == 'generic_web' else ''}>General Web</option>
-                  <option value="marketplace_simulation"{' selected' if selected_domain == 'marketplace_simulation' else ''}>Complex Workspace</option>
-                </select>
-              </label>
-              <label class="ln-field">
-                <span>How Thorough</span>
-                <select data-field="index_mode">
-                  <option value="lightweight"{' selected' if selected_index_mode == 'lightweight' else ''}>Quick Scan</option>
-                  <option value="adaptive"{' selected' if selected_index_mode == 'adaptive' else ''}{' disabled' if not smart_scan_available else ''}>{"Smart Scan" if smart_scan_available else "Smart Scan (requires prior memory)"}</option>
-                  <option value="advanced"{' selected' if selected_index_mode == 'advanced' else ''}>Deep Scan</option>
-                </select>
-              </label>
-              <p class="ln-summary">General Web is for simpler sites and short workflows. Complex Workspace is for nested, recurring, data-heavy systems such as legacy business apps, internal tools, and Marketplace. Quick Scan reads the current page plus the closest relevant links. Smart Scan checks what changed and reuses memory. Deep Scan is recommended for complex workspaces because it builds reusable structure memory. It also explores linked pages for the current goal.</p>
-              {"<p class='ln-summary ln-beta'>Smart Scan turns on after the first indexed session creates site memory.</p>" if not smart_scan_available else ""}
+          <div class="ln-setup-shell">
+            <div class="ln-setup-scroll">
+              <section class="ln-card">
+                <p class="ln-label">Start or Resume</p>
+                <form id="ln-setup-form" class="ln-setup-form" data-setup-form>
+                  <label class="ln-field">
+                    <span>Project</span>
+                    <input data-field="project_name" type="text" value="{html.escape(str(panel.get('project_name', 'Navigator Session')))}" />
+                  </label>
+                  <label class="ln-field">
+                    <span>Goal</span>
+                    <textarea data-field="goal" rows="3">{html.escape(str(panel.get('goal', 'Help me navigate this website.')))}</textarea>
+                  </label>
+                  <label class="ln-field">
+                    <span>Workspace Type</span>
+                    <select data-field="domain_hint">
+                      <option value="generic_web"{' selected' if selected_domain == 'generic_web' else ''}>General Web</option>
+                      <option value="marketplace_simulation"{' selected' if selected_domain == 'marketplace_simulation' else ''}>Complex Workspace</option>
+                    </select>
+                  </label>
+                  <label class="ln-field">
+                    <span>How Thorough</span>
+                    <select data-field="index_mode">
+                      <option value="lightweight"{' selected' if selected_index_mode == 'lightweight' else ''}>Quick Scan</option>
+                      <option value="adaptive"{' selected' if selected_index_mode == 'adaptive' else ''}{' disabled' if not smart_scan_available else ''}>{"Smart Scan" if smart_scan_available else "Smart Scan (requires prior memory)"}</option>
+                      <option value="advanced"{' selected' if selected_index_mode == 'advanced' else ''}>Deep Scan</option>
+                    </select>
+                  </label>
+                  <p class="ln-summary">General Web is for simpler sites and short workflows. Complex Workspace is for nested, recurring, data-heavy systems such as legacy business apps, internal tools, and Marketplace. Quick Scan reads the current page plus the closest relevant links. Smart Scan checks what changed and reuses memory. Deep Scan is recommended for complex workspaces because it builds reusable structure memory. It also explores linked pages for the current goal.</p>
+                  {"<p class='ln-summary ln-beta'>Smart Scan turns on after the first indexed session creates site memory.</p>" if not smart_scan_available else ""}
+                </form>
+              </section>
+              <section class="ln-card">
+                <p class="ln-label">Saved Sessions</p>
+                <div class="ln-session-list">{session_buttons}</div>
+              </section>
+            </div>
+            <div class="ln-setup-footer">
               <div class="ln-command-row ln-setup-actions">
-                <button type="submit" class="ln-primary">Start New Session</button>
+                <button type="submit" form="ln-setup-form" class="ln-primary">Start New Session</button>
               </div>
               {active_session_markup}
-            </form>
-          </section>
-          <section class="ln-card">
-            <p class="ln-label">Saved Sessions</p>
-            <div class="ln-session-list">{session_buttons}</div>
-          </section>
+            </div>
+          </div>
         """
 
         index_summary_markup = ""
@@ -1851,6 +2015,18 @@ class LocalBrowserBridge:
                 capture_details.append(f"<p class='ln-summary'><strong>Screenshot</strong>: {last_capture_file}</p>")
             if last_capture_page:
                 capture_details.append(f"<p class='ln-summary'><strong>Page</strong>: {last_capture_page}</p>")
+            slice_count = int(last_capture_region.get("slice_count", 0) or 0)
+            scroll_height = int(last_capture_region.get("scroll_height", 0) or 0)
+            viewport_height = int(last_capture_region.get("viewport_height", 0) or 0)
+            if slice_count > 0:
+                below_fold_slices = max(0, slice_count - 1)
+                capture_details.append(
+                    f"<p class='ln-summary'><strong>Viewport slices</strong>: {slice_count} total, {below_fold_slices} below the fold.</p>"
+                )
+            if scroll_height > 0 and viewport_height > 0:
+                capture_details.append(
+                    f"<p class='ln-summary'><strong>Coverage</strong>: {scroll_height}px page, {viewport_height}px viewport.</p>"
+                )
             capture_markup = f"""
               <section class="ln-card">
                 <p class="ln-label">Last Capture</p>
@@ -2107,6 +2283,9 @@ class LocalBrowserBridge:
           top: 14px;
           max-height: calc(100dvh - 24px);
           padding: 14px;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
         }
         .ln-agent-cursor {
           position: fixed;
@@ -2199,12 +2378,34 @@ class LocalBrowserBridge:
           padding: 10px 12px;
           font: inherit;
         }
+        .ln-setup-shell {
+          display: flex;
+          flex: 1 1 auto;
+          min-height: 0;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .ln-setup-scroll {
+          display: grid;
+          gap: 10px;
+          flex: 1 1 auto;
+          min-height: 0;
+          overflow: auto;
+          padding-right: 2px;
+        }
         .ln-setup-form { display: grid; gap: 6px; }
+        .ln-setup-footer {
+          flex: 0 0 auto;
+          display: grid;
+          gap: 10px;
+          margin-top: 2px;
+          padding-top: 12px;
+          border-top: 1px solid rgba(122, 162, 255, 0.12);
+          background: linear-gradient(180deg, rgba(8,12,20,0.18), rgba(8,12,20,.94));
+          backdrop-filter: blur(18px);
+        }
         .ln-setup-actions {
-          position: sticky;
-          bottom: 4px;
-          padding-top: 6px;
-          background: linear-gradient(180deg, rgba(8,12,20,0), rgba(8,12,20,.96) 36%);
+          margin: 0;
         }
         .ln-command-grid, .ln-command-row { display: grid; gap: 10px; }
         .ln-command-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 10px; }
@@ -2228,10 +2429,10 @@ class LocalBrowserBridge:
         .ln-dock {
           box-sizing: border-box;
           position: fixed;
-          left: 24px;
+          left: calc((100vw - var(--ln-dock-clearance)) / 2);
           right: auto;
           bottom: 24px;
-          transform: none;
+          transform: translateX(-50%);
           width: min(__DOCK_WIDTH__px, calc(100vw - 48px - var(--ln-dock-clearance)));
           max-width: calc(100vw - 48px - var(--ln-dock-clearance));
           padding: 10px 14px;
