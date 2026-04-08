@@ -302,7 +302,6 @@ class OverlayCommandRequest(BaseModel):
         "page_changed",
         "prepare_review_batch",
         "apply_review_batch",
-        "open_logs",
         "open_sessions",
         "open_map",
         "open_review",

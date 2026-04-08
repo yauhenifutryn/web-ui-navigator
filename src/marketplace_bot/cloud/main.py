@@ -12,7 +12,12 @@ def create_app() -> FastAPI:
     runtime = build_navigator_runtime()
     companion = runtime.companion
 
-    app = FastAPI(title="Live Navigator Cloud Backend")
+    app = FastAPI(
+        title="Live Navigator Cloud Backend",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
     app.state.session_repository = runtime.session_repository
     app.state.artifact_store = runtime.artifact_store
     app.state.companion = companion

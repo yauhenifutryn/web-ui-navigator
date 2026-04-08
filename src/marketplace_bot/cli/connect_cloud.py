@@ -11,6 +11,7 @@ import httpx
 
 from marketplace_bot.bridge import LocalBrowserBridge
 from marketplace_bot.config import SETTINGS
+from marketplace_bot.logging_json import log_event
 from marketplace_bot.navigator_models import ActionProposal, ApprovalRequest, CreateSessionRequest, ExecuteResultPayload
 from marketplace_bot.remote_client import RemoteNavigatorClient
 from marketplace_bot.state_store import StateStore
@@ -259,7 +260,7 @@ async def async_main(argv: list[str] | None = None) -> int:
         print("Connect loop stopped by user.")
         return 130
 
-    print(f"Final session payload: {result}")
+    log_event("cli", "connect_loop_finished", session_id=result.get("session_id", ""))
     return 0
 
 

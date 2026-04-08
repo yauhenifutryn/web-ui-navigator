@@ -49,9 +49,7 @@ if [[ -f "${PID_FILE}" ]]; then
   rm -f "${PID_FILE}"
 fi
 
-if false; then
-  :
-elif lsof -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+if lsof -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
   echo "Port ${PORT} is already in use by a different process. Stop it or choose another PORT." >&2
   exit 1
 else

@@ -1101,7 +1101,6 @@ def create_app(
             "page_changed": _page_changed,
             "prepare_review_batch": _prepare_review_batch_command,
             "apply_review_batch": _apply_review_batch_command,
-            "open_logs": _open_map,
             "open_map": _open_map,
             "open_sessions": _open_sessions,
             "open_review": _open_review,

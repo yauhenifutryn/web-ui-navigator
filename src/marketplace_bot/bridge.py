@@ -632,7 +632,7 @@ class LocalBrowserBridge:
                 return True
             return url.startswith("http") and not self._is_local_url(url)
 
-        def _score(page: Any) -> tuple[int, int]:
+        def _score(page: Any) -> int:
             url = getattr(page, "url", "") or ""
             score = 0
             if prefer_url and prefer_url in url:
@@ -641,7 +641,7 @@ class LocalBrowserBridge:
                 score += 6
             if url.startswith("http") and not self._is_local_url(url):
                 score += 4
-            return (score, 1)
+            return score
 
         eligible_pages = [page for page in pages if _is_eligible(page)]
         if not eligible_pages:

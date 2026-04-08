@@ -8,7 +8,10 @@ WORKDIR /app
 COPY pyproject.toml README.md /app/
 COPY src /app/src
 
-RUN pip install --upgrade pip && pip install .
+RUN pip install --upgrade pip && pip install . \
+    && adduser --disabled-password --no-create-home appuser
+
+USER appuser
 
 ENV PORT=8080
 

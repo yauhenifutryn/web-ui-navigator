@@ -346,9 +346,7 @@ class LiveNavigatorCompanion:
         session.updated_at = utc_now_iso()
         if session.status == "applying_batch":
             session.status = "review_batch_ready"
-        elif session.status == "live_advice":
-            session.status = "live_advice"
-        else:
+        elif session.status != "live_advice":
             session.status = "review_batch_ready"
         self._append_event(session, f"Recorded {len(payload.results)} execution results.")
         return self.session_repository.save(session)
