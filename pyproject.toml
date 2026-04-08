@@ -3,7 +3,7 @@ name = "marketplace-bot"
 version = "0.1.0"
 description = "Universal UI navigator for complex web workspaces"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
   "playwright>=1.53.0",
   "fastapi>=0.116.0",

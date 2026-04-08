@@ -54,7 +54,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full architecture diagrams 
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.12+
 - Google Chrome installed on macOS
 - Chrome debug mode enabled on port `9222`
 - Gemini API key for local planning, or Google Cloud credentials for the optional hosted backend
